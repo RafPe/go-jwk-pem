@@ -68,6 +68,11 @@ func main() {
 					Value: "RSA",
 					Usage: "Output type ( RSA | PUBLIC )",
 				},
+				cli.StringFlag{
+					Name:  "kid",
+					Value: "*",
+					Usage: "Select specific kid",
+				},
 				cli.BoolFlag{
 					Name:  "show-kid",
 					Usage: "Show kid",
@@ -123,6 +128,9 @@ func cmdRetrievePublicKey(c *cli.Context) error {
 	}
 
 	for _, singleJWK := range jwsKeys.Keys {
+		if c.String("kid") != "*" && c.String("kid") != singleJWK.Kid {
+			continue
+		}
 
 		if c.Bool("show-kid") {
 			fmt.Println(fmt.Sprintf("KID: %s", singleJWK.Kid))
