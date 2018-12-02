@@ -63,6 +63,11 @@ func main() {
 					Name:  "url",
 					Usage: "URL from which details should be retrived",
 				},
+				cli.StringFlag{
+					Name:  "out",
+					Value: "RSA",
+					Usage: "Output type ( RSA | PUBLIC )",
+				},
 				cli.BoolFlag{
 					Name:  "show-kid",
 					Usage: "Show kid",
@@ -153,8 +158,17 @@ func cmdRetrievePublicKey(c *cli.Context) error {
 			log.Fatal(err)
 		}
 
+		// Define the output type of our key
+		outputType := ""
+		switch c.String("out") {
+		case "RSA":
+			outputType = "RSA PUBLIC KEY"
+		case "PUBLIC":
+			outputType = "PUBLIC KEY"
+		}
+
 		block := &pem.Block{
-			Type:  "RSA PUBLIC KEY",
+			Type:  outputType,
 			Bytes: der,
 		}
 
