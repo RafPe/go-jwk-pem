@@ -1,22 +1,40 @@
 # go-jwk-pem
-Simple CLI to retrieve PEM from JWK keys URL ( which can be autodiscovered )
+Simple CLI to retrieve PEM from JWK keys URL or from JWT itself ( JWKs are then autodiscovered )
 
 # Examples
-With simple command to be executed ( as shown below ) we receive PEM with `KID` information as well.
 
-## Retrieve PEM
+## Retrieve public key from JWT ( Okta )
+This is quite nice options - allows the CLI to discover your JWT kid and to query your issuing provider ( Okta ) for jwks and to return you associated public key
 ```
-go-jwk-pem pubkey --id https://some.url.com/oath/v1/keys
+> [SHELL]  RafPe $ go-jwk-pem from-token --token "eyJraWQiOiJYcFpicVE2TTh0MHhsMWZVNkM2TExoc0cxQjhEVG9jN2pDWlhfeVJuVm9FI.....<REMOVED-FOR-OBVIOUS-REASONS>......HE-A"
+-----BEGIN RSA PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsRZb8c/pEW4BCbzSs5r7
+................................................................
+8ad8e6hM8uVJGt0MBA0psiWrv5FpJYFqAXzInrYaZegnQzR3Wq9KGdaZsjSShsd3
+-----END RSA PUBLIC KEY-----
 ```
 
-## Retrieve PEM and create JSON friendly string
-The following command will produce friendly single line result ready to be used in other places ;) 
+## Retrieve pubic key from server
+By providing URL with `keys` you can obtain certificate which you need for your tokens.
+### Query for all keys
 ```
-go-jwk-pem pubkey --id https://some.url.com/oath/v1/keys | /usr/bin/env ruby -e 'p ARGF.read'
+> [SHELL]  RafPe $ go-jwk-pem from-server --url https://some.url.com/oath/v1/keys
+```
+### Query for all keys with showing their `kid`
+```
+> [SHELL]  RafPe $ go-jwk-pem from-server --url https://some.url.com/oath/v1/keys --show-kid
+```
+### Query for specific `kid`
+```
+> [SHELL]  RafPe $ go-jwk-pem from-server --url https://some.url.com/oath/v1/keys --kid 123121jkdfhsdkf
+```
+### Output to single line ?
+```
+> [SHELL]  RafPe $ go-jwk-pem from-token --token | /usr/bin/env ruby -e 'p ARGF.read'
 ```
 
-# JWK format 
-Tool have been build with support of the following format 
+# JWK format
+Tool have been build with support of the following format
 ```
 {
     "keys": [
@@ -33,4 +51,4 @@ Tool have been build with support of the following format
 ```
 
 # Why this tool ?
-Simple - for purposes of setting up related automations and being lazy to retrieve this info using different frameworks. 
+Simple - for purposes of setting up related automations and being lazy to retrieve this info using different frameworks.

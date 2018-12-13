@@ -14,7 +14,9 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 
+	"github.com/SermoDigital/jose/jws"
 	"github.com/urfave/cli"
 )
 
@@ -37,6 +39,11 @@ type JWKey struct {
 	K   string `json:"k,omitempty"`
 }
 
+type JWTHeader struct {
+	Kid string `json:"kid"`
+	Alg string `json:"alg"`
+}
+
 var (
 	appName, appVer string
 )
@@ -54,9 +61,17 @@ func main() {
 		},
 	}
 
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:  "out",
+			Value: "RSA",
+			Usage: "Output type ( RSA | PUBLIC )",
+		},
+	}
+
 	app.Commands = []cli.Command{
 		{
-			Name:  "pubkey",
+			Name:  "from-server",
 			Usage: "Get public key from JWKs",
 			Flags: []cli.Flag{
 				cli.StringFlag{
@@ -64,21 +79,27 @@ func main() {
 					Usage: "URL from which details should be retrived",
 				},
 				cli.StringFlag{
-					Name:  "out",
-					Value: "RSA",
-					Usage: "Output type ( RSA | PUBLIC )",
-				},
-				cli.StringFlag{
 					Name:  "kid",
 					Value: "*",
-					Usage: "Select specific kid",
+					Usage: "Select specific kid - otherwise query all",
 				},
 				cli.BoolFlag{
 					Name:  "show-kid",
-					Usage: "Show kid",
+					Usage: "When more keys exists shows kid for every key",
 				},
 			},
 			Action: cmdRetrievePublicKey,
+		},
+		{
+			Name:  "from-token",
+			Usage: "Get public key from JWKs extracted from JWT",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "token",
+					Usage: "Token to be parsed",
+				},
+			},
+			Action: cmdRetrievePublicKeyFromToken,
 		},
 	}
 
@@ -97,42 +118,89 @@ func main() {
 
 }
 
+func cmdRetrievePublicKeyFromToken(c *cli.Context) error {
+	verifyArgumentByName(c, "token")
+	token := c.String("token")
+
+	// Parse token to get issuer information
+	parsedJWT, err := jws.ParseJWT([]byte(token))
+	if err != nil {
+		return err
+	}
+
+	// Customize URL to match Okta
+	issuer, _ := parsedJWT.Claims().Issuer()
+	url := issuer + "/v1/keys"
+
+	// Get kid from our JWT
+	decoded, _ := base64.StdEncoding.DecodeString(strings.Split(token, ".")[0])
+	jwtHeader := JWTHeader{}
+	json.Unmarshal([]byte(string(decoded)+"}"), &jwtHeader)
+
+	// retrrieve JWKs from the server
+	byteArr, err := getJWK(url)
+	jwsKeys := JWKeys{}
+	if err = json.Unmarshal([]byte(byteArr), &jwsKeys); err != nil {
+		fmt.Println(err)
+	}
+
+	// Extract public key
+	extractPublicKeyFromJWK(jwsKeys, c.GlobalString("out"), jwtHeader.Kid, c.Bool("show-kid"))
+
+	return nil
+}
+
 func cmdRetrievePublicKey(c *cli.Context) error {
-	VerifyArgumentByName(c, "url")
+	verifyArgumentByName(c, "url")
 	url := c.String("url")
+
+	// Call to retrieve JWKs - this assumes full URL has been given
+	// to path where JWKs are to be retrieved from
+	byteArr, err := getJWK(url)
+
+	// retrrieve JWKs from the server
+	jwsKeys := JWKeys{}
+	if err = json.Unmarshal([]byte(byteArr), &jwsKeys); err != nil {
+		fmt.Println(err)
+	}
+
+	// Extract public key
+	extractPublicKeyFromJWK(jwsKeys, c.GlobalString("out"), c.String("kid"), c.Bool("show-kid"))
+
+	return nil
+}
+
+// getJWK  retrieves JWKs from the provided URL
+func getJWK(url string) ([]byte, error) {
 
 	client := http.Client{}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	byt, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
+		return nil, err
 	}
 
-	/*
-		Print out body
-	*/
-	//fmt.Println(string(byt))
+	return byt, nil
 
-	jwsKeys := JWKeys{}
-	if err = json.Unmarshal([]byte(byt), &jwsKeys); err != nil {
-		fmt.Println(err)
-	}
+}
 
-	for _, singleJWK := range jwsKeys.Keys {
-		if c.String("kid") != "*" && c.String("kid") != singleJWK.Kid {
+func extractPublicKeyFromJWK(jwks JWKeys, outType, kid string, showKid bool) {
+	for _, singleJWK := range jwks.Keys {
+		if kid != "*" && kid != singleJWK.Kid {
 			continue
 		}
 
-		if c.Bool("show-kid") {
+		//  c.Bool("show-kid")
+		if showKid {
 			fmt.Println(fmt.Sprintf("KID: %s", singleJWK.Kid))
 		}
 
@@ -168,7 +236,7 @@ func cmdRetrievePublicKey(c *cli.Context) error {
 
 		// Define the output type of our key
 		outputType := ""
-		switch c.String("out") {
+		switch outType {
 		case "RSA":
 			outputType = "RSA PUBLIC KEY"
 		case "PUBLIC":
@@ -185,11 +253,11 @@ func cmdRetrievePublicKey(c *cli.Context) error {
 		fmt.Println(out.String())
 
 	}
-
-	return nil
 }
 
-func VerifyArgumentByName(c *cli.Context, argName string) {
+// verifyArgumentByName helper function to display information about
+//						missing arguments
+func verifyArgumentByName(c *cli.Context, argName string) {
 	if c.String(argName) == "" {
 		log.Fatal(fmt.Sprintf("Please provide required argument(s)! [ %s ]", argName))
 	}
